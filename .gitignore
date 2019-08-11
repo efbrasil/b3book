@@ -1,0 +1,4 @@
+MarketData/
+old/
+__pycache__/
+*.py[cod]
