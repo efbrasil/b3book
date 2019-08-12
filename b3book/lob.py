@@ -1,7 +1,23 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-import pdb
+from collections import namedtuple
+from dataclasses import dataclass
+from datetime import datetime
+# import pdb
+
+@dataclass
+class B3Order:
+    prio_date: datetime
+    seq: int
+    side: str
+    event: str
+    state: str
+    condition: int
+    price: int
+    size: int
+    executed: int
+    gen_id: int
 
 class Order:
     """
@@ -19,7 +35,7 @@ class Order:
     side : str
       order side ('buy' or 'sell')
     
-    mod : pd.Timestamp
+    mod : datetime.datetime
       timestamp of last modification
     
     executed : int
@@ -87,124 +103,82 @@ class SingleLOB:
     def remove(self, price, size):
         idx = self.index(price)
         if self.book[idx] < size:
-            raise Exception('negative order amount (price = {})'.format(price))
+            print('negative order amount (price = {})'.format(price))
         self.book[idx] -= size
 
     def process_check(self, order):
-        seq, mod, side, event = order[['seq', 'prio_date', 'side', 'event']]
-        size, executed, price = order[['size', 'executed', 'price']]
-        if seq in self.db:
-            cur_price = self.db[seq].price
-            cur_size = self.db[seq].size
-            cur_executed = self.db[seq].executed
+        if order.seq in self.db:
+            cur_price = self.db[order.seq].price
+            cur_size = self.db[order.seq].size
+            cur_executed = self.db[order.seq].executed
 
-        if executed > size:
+        if order.executed > order.size:
             raise Exception('executed > size')
 
-        if event == 'new':
-            if seq in self.db:
+        if order.event == 'new':
+            if order.seq in self.db:
                 raise Exception('new order already in db')
-            if executed != 0:
+            if order.executed != 0:
                 raise Exception('new order with >0 executed')
-        elif event == 'update':
-            if seq in self.db:
-                cur_executed = self.db[seq].executed
-                if cur_executed != executed:
+        elif order.event == 'update':
+            if order.seq in self.db:
+                cur_executed = self.db[order.seq].executed
+                if cur_executed != order.executed:
                     raise Exception('executed amount changed in update')
-        # elif event == 'cancel':
-            # if seq not in self.db:
-            #     # raise Exception('canceled order not in db({}/{})'.format(
-            #     #     order['side'], order['seq']))
-            #     pass
-            # else:
-            # if seq in self.db:
-            #     if ((cur_price != price) or(cur_size != size) or (cur_executed != executed)):
-            #         raise Exception('changes in cancelation')
-        elif event == 'trade':
-            if seq not in self.db:
-                raise Exception('trade of order not in db')
-            if cur_executed >= executed:
+        elif order.event == 'trade':
+            if order.seq not in self.db:
+                raise Exception('trade of order not in db {} {}'.format(order.side, order.seq))
+            if cur_executed >= order.executed:
                 raise Exception('negative (or zero) trade')
             # if ((cur_price != price) or(cur_size != size)):
             #     raise Exception('changes in trade {}/{}'.format(side, seq))
-            if executed > size:
+            if order.executed > order.size:
                 raise Exception('trade with executed > size')
 
     def process_new(self, order):
-        seq, mod, side = order[['seq', 'prio_date', 'side']]
-        size, executed, price = order[['size', 'executed', 'price']]
-        remaining = size - executed
+        remaining = order.size - order.executed
 
-        self.db[seq] = Order(size, price, side, mod)
-        self.add(price, remaining)
+        self.db[order.seq] = Order(order.size, order.price, order.side, order.prio_date)
+        self.add(order.price, remaining)
 
     def process_update(self, order):
-        seq, mod, side = order[['seq', 'prio_date', 'side']]
-        size, executed, price = order[['size', 'executed', 'price']]
-        remaining = size - executed
+        remaining = order.size - order.executed
 
-        if seq in self.db:
-            cur_price = self.db[seq].price
-            cur_remaining = self.db[seq].remaining()
+        if order.seq in self.db:
+            cur_price = self.db[order.seq].price
+            cur_remaining = self.db[order.seq].remaining()
             self.remove(cur_price, cur_remaining)
-            self.db[seq].update(size, price, mod)
+            self.db[order.seq].update(order.size, order.price, order.prio_date)
         else:
-            self.db[seq] = Order(size, price, side, mod, executed)
+            self.db[order.seq] = Order(order.size, order.price, order.side, order.prio_date, order.executed)
 
-        self.add(price, remaining)
+        self.add(order.price, remaining)
 
     def process_cancel(self, order):
-        seq, mod, side = order[['seq', 'prio_date', 'side']]
-        size, executed, price = order[['size', 'executed', 'price']]
-        # remaining = size - executed
-
-        if seq in self.db:
-            remaining = self.db[seq].remaining()
-            price = self.db[seq].price
+        if order.seq in self.db:
+            remaining = self.db[order.seq].remaining()
+            price = self.db[order.seq].price
             self.remove(price, remaining)
-            del self.db[seq]
+            del self.db[order.seq]
 
     def process_trade(self, order):
         # TODO: remove order from db if completely executed
-        seq, mod, side = order[['seq', 'prio_date', 'side']]
-        size, executed, price = order[['size', 'executed', 'price']]
-        remaining = size - executed
+        amount = order.executed - self.db[order.seq].executed
 
-        amount = executed - self.db[seq].executed
-
-        self.db[seq].execute(amount, mod)
-        self.remove(price, amount)
+        self.db[order.seq].execute(amount, order.prio_date)
+        self.remove(order.price, amount)
 
         return amount
 
-#     def process_orders(self, orders):
-#         amount = 0
-#         trades = 0
-#         for i, order in orders.iterrows():
-#             self.process_check(order)
-
-#             if order['event'] == 'new':
-#                 self.process_new(order)
-#             elif order['event'] == 'update':
-#                 self.process_update(order)
-#             elif order['event'] == 'cancel':
-#                 self.process_cancel(order)
-#             elif order['event'] == 'trade':
-#                 trades += 1
-#                 amount += self.process_trade(order)
-# #            elif:
-# #                raise Exception('Evento nao tratado')
-#         print('trades = {}\namount = {}'.format(trades, amount))
-
     def process_order(self, order):
         self.process_check(order)
-        if order['event'] == 'new':
+        if order.event == 'new':
             self.process_new(order)
-        elif order['event'] == 'update':
+        elif order.event == 'update':
             self.process_update(order)
-        elif order['event'] == 'cancel':
+        elif order.event == 'cancel':
             self.process_cancel(order)
-        elif order['event'] == 'trade':
+        elif order.event == 'trade':
             self.process_trade(order)
         # elif:
         #     raise Exception('Evento nao tratado')
@@ -217,5 +191,4 @@ class LOB:
                                       ticksize, scale, 'buy')}
 
     def process_order(self, order):
-        seq, mod, side = order[['seq', 'prio_date', 'side']]
-        self.lob[side].process_order(order)
+        self.lob[order.side].process_order(order)

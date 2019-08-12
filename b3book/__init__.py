@@ -1,7 +1,4 @@
-import pandas as pd
-import numpy as np
-
 from b3book.constants import *
-from .lob import Order, LOB
+from .lob import Order, LOB, B3Order
 
-from b3book.functions import (read_plain_orders)
+from .functions import (read_orders_from_plain_files)
