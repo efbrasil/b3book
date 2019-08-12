@@ -4,16 +4,13 @@ import numpy as np
 
 import b3book
 
-import importlib
-importlib.reload(b3book)
-importlib.reload(b3book.functions)
-importlib.reload(b3book.lob)
-importlib.reload(b3book)
-importlib.reload(b3book.functions)
-importlib.reload(b3book.lob)
-
-# fnames = ['./MarketData/bbdc4_cpa', './MarketData/bbdc4_vda']
-# orders = b3book.read_plain_orders(fnames)
+# import importlib
+# importlib.reload(b3book)
+# importlib.reload(b3book.functions)
+# importlib.reload(b3book.lob)
+# importlib.reload(b3book)
+# importlib.reload(b3book.functions)
+# importlib.reload(b3book.lob)
 
 # first_neg = pd.Timestamp('2019-06-26 10:03:00.002')
 # buy_pre_neg = orders[(orders.side == 1) & (orders.prio_date < first_neg)]
@@ -23,13 +20,18 @@ importlib.reload(b3book.lob)
 # bbook.process_orders(buy_pre_neg)
 # bbook.plot()
 
-limit = pd.Timestamp('2019-06-26 10:10:00')
-o = orders[(orders.prio_date < limit)]
-lob = b3book.LOB(0, 7000, 1, 1 / 100)
-for _, order in o.iterrows():
-    lob.process_order(order)
+# limit = pd.Timestamp('2019-06-26 10:10:00')
+# o = orders[(orders.prio_date < limit)]
+# lob = b3book.LOB(0, 7000, 1, 1 / 100)
+# for _, order in o.iterrows():
+#     lob.process_order(order)
 
-limit = pd.Timestamp('2019-06-26 15:00:00')
+
+# XXX: bbdc4_cpa and bbdc4_vda must be plain text files with
+#      all bbdc4 (or any other stock) orders for a given day
+fnames = ['./MarketData/bbdc4_cpa', './MarketData/bbdc4_vda']
+orders = b3book.read_plain_orders(fnames)
+limit = pd.Timestamp('2019-06-26 10:30:00')
 o = orders[(orders.prio_date < limit)]
 lob = b3book.LOB(0, 7000, 1, 1 / 100)
 
@@ -64,3 +66,6 @@ for _, order in o.iterrows():
         plt.show(block = False)
         plt.pause(0.001)
 
+# XXX
+# best buy: np.where(lob.lob['buy'].book > 0)[0][-1]
+# best sell: np.where(lob.lob['sell'].book > 0)[0][0]

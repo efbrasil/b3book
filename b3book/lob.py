@@ -4,6 +4,27 @@ import matplotlib.pyplot as plt
 import pdb
 
 class Order:
+    """
+    Single buy or sell order, potentially partially executed.
+    
+    Parameters
+    ----------
+    
+    size : int
+      current size of the order
+    
+    price : int
+      current price of the orders (in cents)
+    
+    side : str
+      order side ('buy' or 'sell')
+    
+    mod : pd.Timestamp
+      timestamp of last modification
+    
+    executed : int
+      amount already executed
+    """
     def __init__(self, size, price, side, mod, executed = 0):
         self.size = size
         self.executed = executed
@@ -144,6 +165,7 @@ class SingleLOB:
             del self.db[seq]
 
     def process_trade(self, order):
+        # TODO: remove order from db if completely executed
         seq, mod, side = order[['seq', 'prio_date', 'side']]
         size, executed, price = order[['size', 'executed', 'price']]
         remaining = size - executed
