@@ -65,6 +65,8 @@ class SingleLOB:
 
     def remove(self, price, size):
         idx = self.index(price)
+        if self.book[idx] < size:
+            raise Exception('negative order amount (price = {})'.format(price))
         self.book[idx] -= size
 
     def process_check(self, order):
@@ -88,22 +90,22 @@ class SingleLOB:
                 cur_executed = self.db[seq].executed
                 if cur_executed != executed:
                     raise Exception('executed amount changed in update')
-        elif event == 'cancel':
+        # elif event == 'cancel':
             # if seq not in self.db:
             #     # raise Exception('canceled order not in db({}/{})'.format(
             #     #     order['side'], order['seq']))
             #     pass
             # else:
-            if seq in self.db:
-                if ((cur_price != price) or(cur_size != size) or (cur_executed != executed)):
-                    raise Exception('changes in cancelation')
+            # if seq in self.db:
+            #     if ((cur_price != price) or(cur_size != size) or (cur_executed != executed)):
+            #         raise Exception('changes in cancelation')
         elif event == 'trade':
             if seq not in self.db:
                 raise Exception('trade of order not in db')
             if cur_executed >= executed:
                 raise Exception('negative (or zero) trade')
-            if ((cur_price != price) or(cur_size != size)):
-                raise Exception('changes in trade')
+            # if ((cur_price != price) or(cur_size != size)):
+            #     raise Exception('changes in trade {}/{}'.format(side, seq))
             if executed > size:
                 raise Exception('trade with executed > size')
 
@@ -133,9 +135,11 @@ class SingleLOB:
     def process_cancel(self, order):
         seq, mod, side = order[['seq', 'prio_date', 'side']]
         size, executed, price = order[['size', 'executed', 'price']]
-        remaining = size - executed
+        # remaining = size - executed
 
         if seq in self.db:
+            remaining = self.db[seq].remaining()
+            price = self.db[seq].price
             self.remove(price, remaining)
             del self.db[seq]
 

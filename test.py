@@ -29,21 +29,38 @@ lob = b3book.LOB(0, 7000, 1, 1 / 100)
 for _, order in o.iterrows():
     lob.process_order(order)
 
+limit = pd.Timestamp('2019-06-26 15:00:00')
+o = orders[(orders.prio_date < limit)]
+lob = b3book.LOB(0, 7000, 1, 1 / 100)
 
-def plot(lob):
-    plt.figure()
-    plt.xlim((36, 40))
-    plt.grid()
-    self = lob.lob['buy']
-    i = np.arange(len(self.book))
-    prices = self.price(i) * self.scale
-    total = sum(self.book)
-    plt.plot(prices, total - np.cumsum(self.book))
+count = 0
+plt.figure()
+plt.xlim((36, 40))
+self = lob.lob['buy']
+i = np.arange(len(self.book))
+prices = self.price(i) * self.scale
 
-    self = lob.lob['sell']
-    i = np.arange(len(self.book))
-    prices = self.price(i) * self.scale
-    total = sum(self.book)
-    plt.plot(prices, np.cumsum(self.book))
-    
-    plt.show(block = False)
+for _, order in o.iterrows():
+    lob.process_order(order)
+    count = count + 1
+    if ((count % 1000) == 0):
+        import sys
+        plt.clf()
+        t = order['prio_date']
+        print(t)
+        sys.stdout.flush()
+        
+        self = lob.lob['buy']
+        total = sum(self.book)
+        plt.plot(prices, total - np.cumsum(self.book))
+
+        self = lob.lob['sell']
+        total = sum(self.book)
+        plt.plot(prices, np.cumsum(self.book))
+
+        plt.xlim((36, 40))
+        plt.title(t)
+        plt.draw()
+        plt.show(block = False)
+        plt.pause(0.001)
+
