@@ -20,6 +20,7 @@ def plot_book (lob: b3book.LOB, PLOT = False):
     if PLOT:
         plt.show()
 
+
 fnames = ['./MarketData/bbdc4_cpa', './MarketData/bbdc4_vda']
 orders = b3book.read_orders_from_plain_files(fnames)
 
@@ -31,7 +32,7 @@ importlib.reload(b3book)
 
 limit = datetime.strptime('2019-06-26 10:30:00.000', '%Y-%m-%d  %H:%M:%S.%f')
 pre = [o for o in orders if o.prio_date < limit]
-lob = b3book.LOB(0, 7000, 1, 1 / 100, b3book.MarketStatus.opened)
+lob = b3book.LOB(-10, 8000, 1, 0.01, 100)
 lob.process_orders(pre)
 
 plt.figure()

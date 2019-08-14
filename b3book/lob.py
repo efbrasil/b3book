@@ -1,5 +1,6 @@
 from enum import Enum
 import numpy as np
+import math
 
 from .single_lob import SingleLOB
 
@@ -19,6 +20,10 @@ class LOB:
         self.status = MarketStatus.closed
         self.price_scale = price_scale
         self.size_scale = size_scale
+        self.pinf = pinf
+        self.psup = psup
+        self.booksize = math.ceil((psup - pinf) / ticksize)
+        self.ticksize = ticksize
         
         self.last_mod = None
 
@@ -67,4 +72,13 @@ class LOB:
     
             self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
             self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
-    
+
+    def get_liquidity(self):
+        liquidity = {'buy':  (np.array(self.lob['buy'].book)) * self.size_scale,
+                     'sell': (np.array(self.lob['sell'].book)) * self.size_scale}
+        
+        idx = np.arange(self.booksize)
+        prices = (self.pinf + idx * self.ticksize) * self.price_scale
+
+        return prices, liquidity
+
