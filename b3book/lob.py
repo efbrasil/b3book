@@ -1,9 +1,11 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import namedtuple
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+from copy import copy
+from enum import Enum
 import pdb
 
 @dataclass
@@ -19,6 +21,7 @@ class B3Order:
     executed: int
     gen_id: int
 
+@dataclass
 class DBOrder:
     """
     Single buy or sell order, potentially partially executed.
@@ -35,35 +38,18 @@ class DBOrder:
     side : str
       order side ('buy' or 'sell')
     
-    mod : datetime.datetime
-      timestamp of last modification
-    
     executed : int
       amount already executed
     """
-    def __init__(self, size, price, side, mod, executed = 0):
-        self.size = size
-        self.executed = executed
-        self.price = price
-        self.side = side
-        self.mod = mod
-    
-    def execute(self, size, mod):
-        self.executed += size
-        self.mod = mod
+    size: int
+    executed: int
+    price: int
+    side: str
 
-    def update(self, size, price, executed, mod):
-        self.size = size
-        self.price = price
-        self.executed = executed
-        self.mod = mod
-
-    def remaining(self):
-        return (self.size - self.executed)
-
-    def __repr__(self):
-        return('<DBOrder (side = {}, size = {}, executed = {}, price = {})'.format(
-            self.side, self.size, self.executed, self.price))
+class MarketStatus(Enum):
+    closed = 0
+    opening = 1
+    opened = 2
 
 class SingleLOB:
     def __init__(self, pinf, psup, ticksize, scale, side):
@@ -74,132 +60,187 @@ class SingleLOB:
 
         self.booksize = math.ceil((psup - pinf) / ticksize)
         self.book = np.zeros(self.booksize, dtype = 'int')
-        self.orders = [[] for x in range(self.booksize)]
+        self.prio_queue = [deque() for x in range(self.booksize)]
         self.db = {}
 
         self.side = side
 
-    def plot(self):
-        plt.figure()
-        i = np.arange(len(self.book))
-        prices = self.price(i) * self.scale
-        plt.bar(prices, self.book)
-        plt.show()
-
-        plt.figure()
-        total = sum(self.book)
-        plt.plot(prices, total - np.cumsum(self.book))
-        plt.show()
-
+        self.status = MarketStatus.closed
 
     def index(self, price):
+        """Returns the index of a given price"""
         return(math.floor((price - self.pinf) / self.ticksize))
 
     def price(self, index):
+        """Returns the lowest price of a given index"""
         return(self.pinf + index * self.ticksize)
 
-    def inc(self, price, size):
-        idx = self.index(price)
-        self.book[idx] += size
+    def add(self, order):
+        """Add an order to the priority queue, to the database and to the book"""
 
-    def dec(self, price, size):
-        idx = self.index(price)
-        if self.book[idx] < size:
+        # Database
+        dborder = DBOrder(size = order.size, executed = order.executed, price = order.price, side = order.side)
+        self.db[order.seq] = dborder
+        
+        # Priority Queue
+        pidx = self.index(order.price)
+        self.prio_queue[pidx].append(order.seq)
+
+        # Book
+        self.book[pidx] += (order.size - order.executed)
+
+    def remove(self, seq):
+        """Removes an order from the priority queue, database and from the book"""
+
+        # Get current info about the order (from the DB)
+        dborder = self.db[seq]
+        dbprice = dborder.price
+        dbremaining = dborder.size - dborder.executed
+        pidx = self.index(dbprice)
+
+        # Book
+        if self.book[pidx] < dbremaining:
             raise Exception('negative order amount (price = {})'.format(price))
-        self.book[idx] -= size
 
-    def add(self, price, seq):
-        pidx = self.index(price)
-        self.orders[pidx].append(seq)
+        self.book[pidx] -= dbremaining
 
-    def remove(self, price, seq):
-        pidx = self.index(price)
-        self.orders[pidx].remove(seq)
+        # Priority Queue
+        self.prio_queue[pidx].remove(seq)
 
-    # def process_check(self, order):
-    #     if order.seq in self.db:
-    #         cur_price = self.db[order.seq].price
-    #         cur_size = self.db[order.seq].size
-    #         cur_executed = self.db[order.seq].executed
+        # Database
+        del self.db[seq]
 
-    #     if order.executed > order.size:
-    #         raise Exception('executed > size')
+    def update(self, order):
+        """Updates an order in the database, the priority queue and the book"""
 
-    #     if order.event == 'new':
-    #         if order.seq in self.db:
-    #             raise Exception('new order already in db')
-    #         if order.executed != 0:
-    #             raise Exception('new order with >0 executed')
-    #     elif order.event == 'update':
-    #         if order.seq in self.db:
-    #             cur_executed = self.db[order.seq].executed
-    #             if cur_executed != order.executed:
-    #                 raise Exception('executed amount changed in update')
-    #     elif order.event == 'trade':
-    #         if order.seq not in self.db:
-    #             raise Exception('trade of order not in db {} {}'.format(order.side, order.seq))
-    #         if cur_executed >= order.executed:
-    #             raise Exception('negative (or zero) trade')
-    #         # if ((cur_price != price) or(cur_size != size)):
-    #         #     raise Exception('changes in trade {}/{}'.format(side, seq))
-    #         if order.executed > order.size:
-    #             raise Exception('trade with executed > size')
+        # Removes the old order and adds the new one, keeping the executed amount
+        executed = self.db[order.seq].executed
+        self.remove(order.seq)
+        updated = copy(order)
+        updated.executed = executed
+        self.add(updated)
+        # self.add(order)
+
+    def execute(self, seq, executed, mod):
+        """
+        Executes part of an order, updating the database and the book.
+        
+        If the remaining is zero, remove from the database and from the priority queue
+        """
+
+        # Get current info about the order (from the DB)
+        dborder = self.db[seq]
+        dbprice = dborder.price
+        dbremaining = dborder.size - dborder.executed
+        pidx = self.index(dbprice)
+
+        if executed > dbremaining:
+            raise Exception('Executed amount > remaining ({})'.format(seq))
+
+        elif executed == dbremaining:
+            self.remove(seq)
+
+        else:
+            self.db[seq].executed += executed
+            self.book[pidx] -= executed
 
     def process_new(self, order):
-        remaining = order.size - order.executed
-
-        self.db[order.seq] = DBOrder(order.size, order.price, order.side, order.prio_date)
-        self.add(order.price, order.seq)
-        self.inc(order.price, remaining)
-
-    def process_update(self, order):
-        remaining = order.size - order.executed
 
         if order.seq in self.db:
-            cur_price = self.db[order.seq].price
-            cur_remaining = self.db[order.seq].remaining()
-            self.dec(cur_price, cur_remaining)
-            self.remove(cur_price, order.seq)
-            self.db[order.seq].update(order.size, order.price, order.executed, order.prio_date)
-        else:
-            self.db[order.seq] = DBOrder(order.size, order.price, order.side, order.prio_date, order.executed)
+            raise Exception('new order already in db ({})'.format(order))
 
-        self.inc(order.price, remaining)
-        self.add(order.price, order.seq)
+        if order.executed != 0:
+            raise Exception('new order with >0 executed({})'.format(order))
+
+        self.add(order)
 
     def process_cancel(self, order):
-        if order.seq in self.db:
-            remaining = self.db[order.seq].remaining()
-            price = self.db[order.seq].price
-            self.dec(price, remaining)
-            self.remove(price, order.seq)
-            del self.db[order.seq]
 
-    # def process_trade(self, order):
-    #     # TODO: remove order from db if completely executed
-    #     amount = order.executed - self.db[order.seq].executed
+        if order.seq not in self.db:
+            # print('cancel not in db ({})'.format(order))
+            pass
 
-    #     self.db[order.seq].execute(amount, order.prio_date)
-    #     self.dec(order.price, amount)
-    #     self.rmeove(order.price, order.seq)
+        else:
+            self.remove(order.seq)
 
-    #     return amount
+    def process_update(self, order):
 
+        if order.seq not in self.db:
+            # print('update not in db ({})'.format(order))
+            self.add(order)
+        
+        # elif self.db[order.seq].executed != order.executed:
+        #     raise Exception('executed amount changed in update ({})'.format(order))
+
+        else:
+            self.update(order)
+        
+    def process_pre_trade(self, order):
+
+        if order.seq not in self.db:
+            print('pre_open trade not in db ({})'.format(order))
+            return
+        
+        elif self.db[order.seq].size != order.size:
+            raise Exception('size changed in pre open trade ({})'.format(order))
+
+        elif self.db[order.seq].price != order.price:
+            # raise Exception('price changed in pre open trade ({})'.format(order))
+            print('price changed in pre open trade ({})'.format(order))
+            self.update(order)
+
+        # Get current info about the order (from the DB)
+        dborder = self.db[order.seq]
+        dbprice = dborder.price
+        dbremaining = dborder.size - dborder.executed
+        pidx = self.index(dbprice)
+
+        executed = order.executed - dborder.executed
+
+        if executed > dbremaining:
+            raise Exception('Pre trade executed amount > remaining ({})'.format(seq))
+
+        elif executed == dbremaining:
+            self.remove(order.seq)
+
+        else:
+            self.db[order.seq].executed += executed
+            self.book[pidx] -= executed
+        
     def process_order(self, order):
-        # pdb.set_trace()
-        # self.process_check(order)
-        # print('[{}] [{}] {}'.format(order.side, order.event, order))
+
+        if order.executed > order.size:
+            raise Exception('executed > size ({})'.format(order))
+
+        if self.status == MarketStatus.closed and order.event == 'trade':
+            self.status = MarketStatus.opening
+
+        if self.status == MarketStatus.opening and order.event != 'trade':
+            self.status = MarketStatus.opened
+
         if order.event == 'new':
             self.process_new(order)
+
         elif order.event == 'update':
             self.process_update(order)
+
         elif order.event == 'cancel':
             self.process_cancel(order)
+            
         elif order.event == 'trade':
+            if self.status == MarketStatus.opening:
+                self.process_pre_trade(order)
+            else:
+                self.process_pre_trade(order)
+
+        elif order.event == 'reentry':
             pass
-            # self.process_trade(order)
-        # elif:
-        #     raise Exception('Evento nao tratado')
+            # self.process_update(order)
+
+
+        else:
+            print('unknown event ({})'.format(order))
+            # raise Exception('unknown event ({})'.format(order))
 
 class LOB:
     def __init__(self, pinf, psup, ticksize, scale):
@@ -208,5 +249,37 @@ class LOB:
                     'sell': SingleLOB(pinf, psup,
                                       ticksize, scale, 'buy')}
 
+        self.last_mod = None
+
     def process_order(self, order):
+        # if order.seq == 90686685850:
+        #     pdb.set_trace()
         self.lob[order.side].process_order(order)
+        self.last_mod = order.prio_date
+
+    def trade(self):
+        while (len(self.lob['buy'].db) > 0) and (len(self.lob['sell'].db) > 0):
+            # pdb.set_trace()
+            best_buy_pidx  = np.where(self.lob['buy'].book > 0)[0][-1]
+            best_buy_price = self.lob['buy'].price(best_buy_pidx)
+    
+            best_sell_pidx = np.where(self.lob['sell'].book > 0)[0][0]
+            best_sell_price = self.lob['sell'].price(best_sell_pidx)
+    
+            if best_buy_price < best_sell_price:
+                break
+            
+            # Se chegar aqui, ha um trade pendente
+            best_buy_seq = self.lob['buy'].prio_queue[best_buy_pidx][0]
+            best_buy_size = self.lob['buy'].db[best_buy_seq].size - self.lob['buy'].db[best_buy_seq].executed
+    
+            best_sell_seq = self.lob['sell'].prio_queue[best_sell_pidx][0]
+            best_sell_size = self.lob['sell'].db[best_sell_seq].size - self.lob['sell'].db[best_sell_seq].executed
+    
+            last_mod = self.last_mod
+            trade_size = min(best_buy_size, best_sell_size)
+    
+            self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
+            self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
+            print('trade: {}'.format(trade_size))
+    
