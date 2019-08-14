@@ -1,4 +1,3 @@
-from b3book.constants import *
-from .lob import DBOrder, LOB, B3Order, MarketStatus
-
-from .functions import (read_orders_from_plain_files)
+from .data_classes import DBOrder, B3Order
+from .functions import read_orders_from_plain_files
+from .lob import LOB, MarketStatus

@@ -1,7 +1,9 @@
-#cpa_names = ['data_sessao', 'ticker', 'sentido', 'seq', 'gen_id', 'cod_ev',
-#             'hora_prio', 'ind_prio', 'preco', 'qtd_total', 'qtd_neg',
-#             'data_oferta', 'data_entrada', 'estado', 'condicao', 'corretora']
+events = {1 : 'new', 2 : 'update', 3 : 'cancel', 4 : 'trade',
+          5 : 'reentry', 6 : 'newstop', 7 : 'reject',
+          8 : 'removed', 9 : 'stopped', 11 : 'expire'}
 
-#orders_names = ['session_date', 'ticker', 'cod_side', 'seq', 'gen_id', 'ev_code', 
-#                'prio_time', 'prio_ind', 'price', 'size', 'executed',
-#                'order_date', 'recv_date', 'state', 'condition', 'owner']
+sides = {'1' : 'buy', '2' : 'sell'}
+
+states = {'0' : 'new', '1' : 'partial', '2' : 'executed',
+          '4' : 'cancelled', '5' : 'modified', '8' : 'rejected',
+          'C' : 'expired'}
