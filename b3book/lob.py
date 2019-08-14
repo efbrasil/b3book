@@ -65,8 +65,6 @@ class SingleLOB:
 
         self.side = side
 
-        self.status = MarketStatus.closed
-
     def index(self, price):
         """Returns the index of a given price"""
         return(math.floor((price - self.pinf) / self.ticksize))
@@ -179,6 +177,7 @@ class SingleLOB:
 
         if order.seq not in self.db:
             print('pre_open trade not in db ({})'.format(order))
+            pdb.set_trace()
             return
         
         elif self.db[order.seq].size != order.size:
@@ -212,12 +211,6 @@ class SingleLOB:
         if order.executed > order.size:
             raise Exception('executed > size ({})'.format(order))
 
-        if self.status == MarketStatus.closed and order.event == 'trade':
-            self.status = MarketStatus.opening
-
-        if self.status == MarketStatus.opening and order.event != 'trade':
-            self.status = MarketStatus.opened
-
         if order.event == 'new':
             self.process_new(order)
 
@@ -227,11 +220,11 @@ class SingleLOB:
         elif order.event == 'cancel':
             self.process_cancel(order)
             
-        elif order.event == 'trade':
-            if self.status == MarketStatus.opening:
-                self.process_pre_trade(order)
-            else:
-                self.process_pre_trade(order)
+        # elif order.event == 'trade':
+        #     # self.process_pre_trade(order)
+        #     if self.status == MarketStatus.opening:
+        #         self.process_pre_trade(order)
+
 
         elif order.event == 'reentry':
             pass
@@ -243,21 +236,34 @@ class SingleLOB:
             # raise Exception('unknown event ({})'.format(order))
 
 class LOB:
-    def __init__(self, pinf, psup, ticksize, scale):
+    def __init__(self, pinf, psup, ticksize, scale, status = MarketStatus.closed):
         self.lob = {'buy' : SingleLOB(pinf, psup,
                                       ticksize, scale, 'buy'),
                     'sell': SingleLOB(pinf, psup,
                                       ticksize, scale, 'buy')}
 
         self.last_mod = None
+        self.status = MarketStatus.closed
 
     def process_order(self, order):
-        # if order.seq == 90686685850:
-        #     pdb.set_trace()
-        self.lob[order.side].process_order(order)
         self.last_mod = order.prio_date
 
-    def trade(self):
+        if self.status == MarketStatus.closed and order.event == 'trade':
+            self.status = MarketStatus.opening
+
+        if self.status == MarketStatus.opening and order.event != 'trade':
+            self.status = MarketStatus.opened
+
+        if order.event == 'trade' and self.status == MarketStatus.opening:
+            self.lob[order.side].process_pre_trade(order)
+        
+        if order.event != 'trade':
+            self.lob[order.side].process_order(order)
+
+        if self.status == MarketStatus.opened:
+            self.check_trades()
+
+    def check_trades(self):
         while (len(self.lob['buy'].db) > 0) and (len(self.lob['sell'].db) > 0):
             # pdb.set_trace()
             best_buy_pidx  = np.where(self.lob['buy'].book > 0)[0][-1]
@@ -269,7 +275,7 @@ class LOB:
             if best_buy_price < best_sell_price:
                 break
             
-            # Se chegar aqui, ha um trade pendente
+            # If this is reached, than there is a trade pending
             best_buy_seq = self.lob['buy'].prio_queue[best_buy_pidx][0]
             best_buy_size = self.lob['buy'].db[best_buy_seq].size - self.lob['buy'].db[best_buy_seq].executed
     
@@ -281,5 +287,5 @@ class LOB:
     
             self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
             self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
-            print('trade: {}'.format(trade_size))
+            # print('trade: {}'.format(trade_size))
     
