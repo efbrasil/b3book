@@ -6,11 +6,10 @@ from copy import copy
 from .data_classes import B3Order, DBOrder
 
 class SingleLOB:
-    def __init__(self, pinf, psup, ticksize, scale, side):
+    def __init__(self, pinf, psup, ticksize, side):
         self.pinf = pinf
         self.psup = psup
         self.ticksize = ticksize
-        self.scale = scale
 
         self.booksize = math.ceil((psup - pinf) / ticksize)
         self.book = np.zeros(self.booksize, dtype = 'int')
@@ -151,7 +150,7 @@ class SingleLOB:
         executed = order.executed - dborder.executed
 
         if executed > dbremaining:
-            raise Exception('Pre trade executed amount > remaining ({})'.format(seq))
+            raise Exception('Pre trade executed amount > remaining ({})'.format(order))
 
         elif executed == dbremaining:
             self.remove(order.seq)

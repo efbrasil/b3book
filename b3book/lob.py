@@ -9,36 +9,43 @@ class MarketStatus(Enum):
     opened = 2
 
 class LOB:
-    def __init__(self, pinf, psup, ticksize, scale, status = MarketStatus.closed):
-        self.lob = {'buy' : SingleLOB(pinf, psup,
-                                      ticksize, scale, 'buy'),
-                    'sell': SingleLOB(pinf, psup,
-                                      ticksize, scale, 'buy')}
-
-        self.last_mod = None
-        self.status = MarketStatus.closed
-
-    def process_order(self, order):
-        self.last_mod = order.prio_date
-
-        if self.status == MarketStatus.closed and order.event == 'trade':
-            self.status = MarketStatus.opening
-
-        if self.status == MarketStatus.opening and order.event != 'trade':
-            self.status = MarketStatus.opened
-
-        if order.event == 'trade' and self.status == MarketStatus.opening:
-            self.lob[order.side].process_pre_trade(order)
+    def __init__(self, pinf = 0, psup = 100, ticksize = 1,
+                 price_scale = 0.01, size_scale = 100,
+                 status = MarketStatus.closed):
         
-        if order.event != 'trade':
-            self.lob[order.side].process_order(order)
+        self.lob = {'buy' : SingleLOB(pinf, psup, ticksize, 'buy'),
+                    'sell': SingleLOB(pinf, psup, ticksize, 'sell')}
 
-        if self.status == MarketStatus.opened:
-            self.check_trades()
+        self.status = MarketStatus.closed
+        self.price_scale = price_scale
+        self.size_scale = size_scale
+        
+        self.last_mod = None
+
+    def process_orders(self, orders):
+        for order in orders:
+            if self.last_mod and self.last_mod > order.prio_date:
+                raise Exception('out of order order ({})'.format(order))
+            
+            self.last_mod = order.prio_date
+
+            if self.status == MarketStatus.closed and order.event == 'trade':
+                self.status = MarketStatus.opening
+
+            if self.status == MarketStatus.opening and order.event != 'trade':
+                self.status = MarketStatus.opened
+
+            if order.event == 'trade' and self.status == MarketStatus.opening:
+                self.lob[order.side].process_pre_trade(order)
+
+            if order.event != 'trade':
+                self.lob[order.side].process_order(order)
+
+            if self.status == MarketStatus.opened:
+                self.check_trades()
 
     def check_trades(self):
         while (len(self.lob['buy'].db) > 0) and (len(self.lob['sell'].db) > 0):
-            # pdb.set_trace()
             best_buy_pidx  = np.where(self.lob['buy'].book > 0)[0][-1]
             best_buy_price = self.lob['buy'].price(best_buy_pidx)
     
@@ -60,5 +67,4 @@ class LOB:
     
             self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
             self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
-            # print('trade: {}'.format(trade_size))
     
