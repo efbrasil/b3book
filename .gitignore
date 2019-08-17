@@ -2,3 +2,6 @@ MarketData/
 old/
 __pycache__/
 *.py[cod]
+build/
+dist/
+b3book.egg-info/

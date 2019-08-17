@@ -1,28 +1,10 @@
 import b3book
-import importlib
 from datetime import datetime
 import matplotlib.pyplot as plt
-import pdb
 import numpy as np
 
-def plot_book (lob: b3book.LOB, PLOT = False):
-    buy = lob.lob['buy']
-    i = np.arange(len(buy.book))
-    prices = buy.price(i) * lob.price_scale
-    total = sum(buy.book)
-    plt.plot(prices, total - np.cumsum(buy.book))
-    
-    sell = lob.lob['sell']
-    total = sum(sell.book)
-    plt.plot(prices, np.cumsum(sell.book))
-    
-    plt.xlim((36, 40))
-    if PLOT:
-        plt.show()
-
-
-fnames = ['./MarketData/bbdc4_cpa', './MarketData/bbdc4_vda']
-orders = b3book.read_orders_from_plain_files(fnames)
+import pdb
+import importlib
 
 importlib.reload(b3book)
 importlib.reload(b3book.functions)
@@ -30,11 +12,69 @@ importlib.reload(b3book.single_lob)
 importlib.reload(b3book.lob)
 importlib.reload(b3book)
 
-limit = datetime.strptime('2019-06-26 10:30:00.000', '%Y-%m-%d  %H:%M:%S.%f')
-pre = [o for o in orders if o.prio_date < limit]
-lob = b3book.LOB(-10, 8000, 1, 0.01, 100)
-lob.process_orders(pre)
+# def accum(book, side):
+#     if side == 'buy':
+#         return (sum(book) - np.cumsum(book))
+#     else:
+#         return np.cumsum(book)
+    
+# def parse_book(slob):
+#     side = 'buy'
+#     slob = lob.lob[side]
+#     idx = np.where(slob.book > 0)[0]
+#     if side == 'buy':
+#         idx = np.flip(idx)
+#     price = slob.price(idx)
+#     size = slob.book[idx]
+#     plt.plot(price, np.cumsum(size))
+#     plt.show()
 
-plt.figure()
-plot_book(lob, True)
+
+lob = b3book.LOB(pinf = 0, psup = 12000, ticksize = 1,
+                 price_scale=0.01, size_scale=100,
+                 initial_status='closed')
+# lob.orders = myo
+
+# files = ['OFER_CPA_20190228.gz', 'OFER_VDA_20190228.gz']
+limit = datetime.strptime('2019-02-28 10:30:00.000', '%Y-%m-%d  %H:%M:%S.%f')
+# lob.read_orders('BBDC4', files, 'data')
+lob.load_orders('bbdc4-20190228.data')
+myo = lob.orders
+lob.process_orders(limit)
+b3book.plot_book(lob, plt, True)
+
+# Price impact
+snap = lob.snapshot()
+sizes = snap['buy_sizes']/100
+prices = snap['buy_prices']
+size = 17000
+
+qts = np.array([], dtype = np.int64)
+eps = np.array([])
+
+qtds = np.linspace(1, 2500, 2500)
+tpi = temp_impact(sizes, prices, qtds)
+plt.plot(qtds, tpi)
+plt.show()
+
+# 0.00088
+
+def temp_impact(sizes, prices, size):
+    price = prices[0]
+    eps = np.array([eff_price(sizes, prices, q) for q in qtds])
+    return(np.abs(eps - price) / price)
+    
+def eff_price(sizes, prices, size):
+    s = np.array(sizes)
+    s[-1] = 0
+    s = np.roll(s, 1)
+    cs = np.cumsum(s)
+    l1 = size - cs
+    l2 = np.maximum(0, l1)
+    l3 = np.minimum(l2, sizes)
+
+    return(np.dot(l3, prices) / sum(l3))
+    
+
+
 

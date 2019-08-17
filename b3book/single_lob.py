@@ -188,3 +188,10 @@ class SingleLOB:
             print('unknown event ({})'.format(order))
             # raise Exception('unknown event ({})'.format(order))
 
+    def snapshot(self):
+        idx = np.where(self.book > 0)[0]
+        prices = self.price(idx)
+        sizes = self.book[idx]
+        
+        return sizes, prices
+
