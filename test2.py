@@ -12,34 +12,18 @@ importlib.reload(b3book.single_lob)
 importlib.reload(b3book.lob)
 importlib.reload(b3book)
 
-# def accum(book, side):
-#     if side == 'buy':
-#         return (sum(book) - np.cumsum(book))
-#     else:
-#         return np.cumsum(book)
-    
-# def parse_book(slob):
-#     side = 'buy'
-#     slob = lob.lob[side]
-#     idx = np.where(slob.book > 0)[0]
-#     if side == 'buy':
-#         idx = np.flip(idx)
-#     price = slob.price(idx)
-#     size = slob.book[idx]
-#     plt.plot(price, np.cumsum(size))
-#     plt.show()
-
-
 lob = b3book.LOB(pinf = 0, psup = 12000, ticksize = 1,
                  price_scale=0.01, size_scale=100,
                  initial_status='closed')
-# lob.orders = myo
+lob.orders = myo
+lob.session_date = lob.orders[0].session_date
 
-# files = ['OFER_CPA_20190228.gz', 'OFER_VDA_20190228.gz']
-limit = datetime.strptime('2019-02-28 10:30:00.000', '%Y-%m-%d  %H:%M:%S.%f')
+files = ['OFER_CPA_20190628.gz', 'OFER_VDA_20190628.gz']
+limit = datetime.strptime('2019-06-28 15:01:00.000', '%Y-%m-%d  %H:%M:%S.%f')
 # lob.read_orders('BBDC4', files, 'data')
-lob.load_orders('bbdc4-20190228.data')
+# lob.load_orders('bbdc4-20190228.data')
 myo = lob.orders
+lob.set_snapshot_freq(60*10)
 lob.process_orders(limit)
 b3book.plot_book(lob, plt, True)
 
@@ -77,4 +61,21 @@ def eff_price(sizes, prices, size):
     
 
 
+
+# def accum(book, side):
+#     if side == 'buy':
+#         return (sum(book) - np.cumsum(book))
+#     else:
+#         return np.cumsum(book)
+    
+# def parse_book(slob):
+#     side = 'buy'
+#     slob = lob.lob[side]
+#     idx = np.where(slob.book > 0)[0]
+#     if side == 'buy':
+#         idx = np.flip(idx)
+#     price = slob.price(idx)
+#     size = slob.book[idx]
+#     plt.plot(price, np.cumsum(size))
+#     plt.show()
 

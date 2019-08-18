@@ -5,6 +5,7 @@ import os
 import gzip
 import csv
 import pickle
+from datetime import datetime, timedelta
 
 from .single_lob import SingleLOB
 from .functions import parse_csv_row
@@ -26,6 +27,9 @@ class LOB:
         self.ticksize = ticksize
 
         self.last_mod = None
+        self.session_date = None
+        self.snapshot_times = []
+        self.snapshots = []
         self.orders = []
 
     def read_orders(self, ticker, fnames,
@@ -42,6 +46,13 @@ class LOB:
                                                       self.price_scale,
                                                       self.size_scale)
                     
+                    if self.session_date == None:
+                        self.session_date = order.session_date
+                    elif self.session_date != order.session_date:
+                        raise Exception(
+                            'Orders from more than one sesssion ({})'.format(
+                                order))
+            
                     if row_ticker == ticker:
                         self.orders.append(order)
         
@@ -59,10 +70,19 @@ class LOB:
         with open(os.path.join(data_dir, fname), 'rb') as orders_file:
             self.orders = pickle.load(orders_file)
 
+        self.session_date = self.orders[0].session_date
+
     def process_orders(self, limit):
         for order in self.orders:
+            
             if order.prio_date > limit:
                 break
+
+            if len(self.snapshot_times) > 0:
+                if order.prio_date > self.snapshot_times[0]:
+                    self.snapshots.append((self.snapshot_times[0],
+                                           self.snapshot()))
+                    self.snapshot_times = self.snapshot_times[1:]
             
             if self.last_mod and self.last_mod > order.prio_date:
                 raise Exception('out of order order ({})'.format(order))
@@ -119,6 +139,34 @@ class LOB:
         prices = (self.pinf + idx * self.ticksize) * self.price_scale
 
         return prices, liquidity
+
+    def set_snapshot_times(self, snapshot_times):
+        self.snapshot_times = []
+        for s_time in snapshot_times:
+            if isinstance(s_time, datetime):
+                self.snapshot_times.append(s_time)
+            elif isinstance(s_time, str):
+                self.snapshot_times.append(datetime.strptime(
+                    '{} {}'.format(self.session_date, s_time),
+                    '%Y-%m-%d %H:%M:%S'))
+        self.snapshot_times.sort()
+
+    def set_snapshot_freq(self, interval,
+                          first = '10:15:00', last = '16:45:00'):
+        t0 = datetime.strptime('{} {}'.format(self.session_date, first),
+                               '%Y-%m-%d %H:%M:%S')
+        T  = datetime.strptime('{} {}'.format(self.session_date, last),
+                               '%Y-%m-%d %H:%M:%S')
+
+        s_times = []
+        t = t0
+        delta = timedelta(seconds = interval)
+        
+        while t <= T:
+            s_times.append(t)
+            t = t + delta
+
+        self.set_snapshot_times(s_times)
 
     def snapshot(self):
         res = {}

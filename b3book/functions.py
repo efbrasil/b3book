@@ -20,7 +20,9 @@ def parse_csv_row(row, price_scale, size_scale):
     price_str = row[8].strip()
     price = int(float(price_str) / price_scale)
 
-    order = B3Order(prio_date, seq, side, event, state,
+    session_date = row[0]
+
+    order = B3Order(prio_date, session_date, seq, side, event, state,
                     condition, price, size, executed, gen_id)
 
     return order, ticker

@@ -52,7 +52,7 @@ class SingleLOB:
 
         # Book
         if self.book[pidx] < dbremaining:
-            raise Exception('negative order amount (price = {})'.format(price))
+            raise Exception('negative order amount (seq = {})'.format(seq))
 
         self.book[pidx] -= dbremaining
 
@@ -66,6 +66,11 @@ class SingleLOB:
         """Updates an order in the database, the priority queue and the book"""
 
         # Removes the old order and adds the new one, keeping the executed amount
+        if self.db[order.seq].size < order.executed:
+            raise Exception('in update, executed > size')
+        elif self.db[order.seq].size == order.executed:
+            raise Exception('in update, executed == size')
+        
         executed = self.db[order.seq].executed
         self.remove(order.seq)
         updated = copy(order)
@@ -80,6 +85,8 @@ class SingleLOB:
         If the remaining is zero, remove from the database and from the priority queue
         """
 
+        if executed <= 0:
+            raise Exception('in execute(), executed <= 0')
         # Get current info about the order (from the DB)
         dborder = self.db[seq]
         dbprice = dborder.price

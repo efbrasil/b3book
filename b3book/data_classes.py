@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class B3Order:
     prio_date: datetime
+    session_date: str
     seq: int
     side: str
     event: str
