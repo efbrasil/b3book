@@ -13,7 +13,7 @@ from .functions import parse_csv_row
 class LOB:
     def __init__(self, pinf = 0, psup = 100, ticksize = 1,
                  price_scale = 0.01, size_scale = 100,
-                 initial_status = 'closed'):
+                 initial_status = 'closed', use_b3_trades = 'preopen'):
         
         self.lob = {'buy' : SingleLOB(pinf, psup, ticksize, 'buy'),
                     'sell': SingleLOB(pinf, psup, ticksize, 'sell')}
@@ -25,6 +25,7 @@ class LOB:
         self.psup = psup
         self.booksize = math.ceil((psup - pinf) / ticksize)
         self.ticksize = ticksize
+        self.use_b3_trades = use_b3_trades
 
         self.last_mod = None
         self.session_date = None
@@ -73,8 +74,13 @@ class LOB:
         self.session_date = self.orders[0].session_date
 
     def process_orders(self, limit):
-        for order in self.orders:
+        if self.session_date == None:
+            self.session_date = self.orders[0].session_date
+
+        day_start = datetime.strptime('{} 00:00:01'.format(self.session_date),
+                                      '%Y-%m-%d %H:%M:%S')
             
+        for order in self.orders:
             if order.prio_date > limit:
                 break
 
@@ -89,7 +95,10 @@ class LOB:
             
             self.last_mod = order.prio_date
 
-            if self.status == 'closed' and order.event == 'trade':
+            if (self.status == 'closed' and
+                order.event == 'trade' and
+                order.prio_date >= day_start and
+                self.use_b3_trades != 'always'):
                 self.status = 'opening'
 
             if self.status == 'opening' and order.event != 'trade':
@@ -98,8 +107,8 @@ class LOB:
                 self.check_trades()
                 self.status = 'open'
 
-            if order.event == 'trade' and self.status == 'opening':
-                self.lob[order.side].process_pre_trade(order)
+            if order.event == 'trade' and (self.status == 'opening' or self.use_b3_trades == 'always'):
+                self.lob[order.side].process_trade(order)
 
             if order.event != 'trade':
                 self.lob[order.side].process_order(order)
@@ -119,27 +128,15 @@ class LOB:
                 return best_buy_price, best_sell_price
             
             # If this is reached, than there is a trade pending
-            best_buy_seq = self.lob['buy'].prio_queue[best_buy_pidx][0]
-            best_buy_size = self.lob['buy'].db[best_buy_seq].size - self.lob['buy'].db[best_buy_seq].executed
-    
-            best_sell_seq = self.lob['sell'].prio_queue[best_sell_pidx][0]
-            best_sell_size = self.lob['sell'].db[best_sell_seq].size - self.lob['sell'].db[best_sell_seq].executed
+            best_buy_size = self.lob['buy'].book[best_buy_pidx]
+            best_sell_size = self.lob['sell'].book[best_sell_pidx]
     
             last_mod = self.last_mod
             trade_size = min(best_buy_size, best_sell_size)
+
+            self.lob['buy'].dec(best_buy_price, trade_size)
+            self.lob['sell'].dec(best_sell_price, trade_size)
     
-            self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
-            self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
-
-    def get_liquidity(self):
-        liquidity = {'buy':  (np.array(self.lob['buy'].book)) * self.size_scale,
-                     'sell': (np.array(self.lob['sell'].book)) * self.size_scale}
-        
-        idx = np.arange(self.booksize)
-        prices = (self.pinf + idx * self.ticksize) * self.price_scale
-
-        return prices, liquidity
-
     def set_snapshot_times(self, snapshot_times):
         self.snapshot_times = []
         for s_time in snapshot_times:

@@ -58,3 +58,35 @@ def plot_book(lob, plt, PLOT = True):
 
     if PLOT:
         plt.show()
+
+def plot_snapshot(snapshot, plt, PLOT = True):
+    buy = lob.lob['buy']
+    i = np.arange(len(buy.book))
+    prices = buy.price(i) * lob.price_scale
+    total = sum(buy.book)
+    plt.plot(prices, total - np.cumsum(buy.book))
+    
+    sell = lob.lob['sell']
+    total = sum(sell.book)
+    plt.plot(prices, np.cumsum(sell.book))
+
+    best_buy_pidx  = np.where(lob.lob['buy'].book > 0)[0][-1]
+    best_buy_price = prices[best_buy_pidx]
+
+    best_sell_pidx = np.where(lob.lob['sell'].book > 0)[0][0]
+    best_sell_price = prices[best_sell_pidx]
+
+    mid = (best_buy_price + best_sell_price) / 2
+
+    pmin = snapshot[1]['mid'] * 0.98
+    pmax = snapshot[1]['mid'] * 1.02
+
+    idx = np.where((prices >= pmin) & (prices <= pmax))
+    smax = max(max(sum(buy.book) - np.cumsum(buy.book[idx])),
+               max(np.cumsum(sell.book[idx])))
+    
+    plt.xlim((pmin, pmax))
+    plt.ylim((0, smax))
+
+    if PLOT:
+        plt.show()
