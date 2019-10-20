@@ -11,7 +11,7 @@ from .single_lob import SingleLOB
 from .functions import parse_csv_row
 
 class LOB:
-    def __init__(self, pinf = 0, psup = 100, ticksize = 1,
+    def __init__(self, pinf = 0, psup = 12000, ticksize = 1,
                  price_scale = 0.01, size_scale = 100,
                  initial_status = 'closed'):
         
@@ -31,6 +31,8 @@ class LOB:
         self.snapshot_times = []
         self.snapshots = []
         self.orders = []
+        self.bas = []
+        self.cur_bas = None
 
     def read_orders(self, ticker, fnames,
                     data_dir = os.path.join(os.getcwd(), 'data')):
@@ -72,7 +74,11 @@ class LOB:
 
         self.session_date = self.orders[0].session_date
 
-    def process_orders(self, limit):
+    def process_orders(self, tlimit = '16:45'):
+
+        limit = datetime.strptime('{} {}'.format(self.session_date, tlimit),
+                                  '%Y-%m-%d %H:%M')
+
         for order in self.orders:
             
             if order.prio_date > limit:
@@ -87,50 +93,47 @@ class LOB:
             if self.last_mod and self.last_mod > order.prio_date:
                 raise Exception('out of order order ({})'.format(order))
             
-            self.last_mod = order.prio_date
-
             if self.status == 'closed' and order.event == 'trade':
                 self.status = 'opening'
 
             if self.status == 'opening' and order.event != 'trade':
-                # All pending trades should be completed before the market
-                # opens
-                self.check_trades()
                 self.status = 'open'
 
-            if order.event == 'trade' and self.status == 'opening':
-                self.lob[order.side].process_pre_trade(order)
+            self.lob[order.side].process_order(order)
 
-            if order.event != 'trade':
-                self.lob[order.side].process_order(order)
+            if (self.last_mod == None) or (order.prio_date > self.last_mod):
+                self.last_mod = order.prio_date
+                if (self.cur_bas != None):
+                    self.bas.append(self.cur_bas)
 
             if self.status == 'open':
-                self.check_trades()
+                best_bid_idx = np.where(self.lob['buy'].book > 0)[0][-1]
+                best_ask_idx = np.where(self.lob['sell'].book > 0)[0][0]
 
-    def check_trades(self):
-        while (len(self.lob['buy'].db) > 0) and (len(self.lob['sell'].db) > 0):
-            best_buy_pidx  = np.where(self.lob['buy'].book > 0)[0][-1]
-            best_buy_price = self.lob['buy'].price(best_buy_pidx)
-    
-            best_sell_pidx = np.where(self.lob['sell'].book > 0)[0][0]
-            best_sell_price = self.lob['sell'].price(best_sell_pidx)
-    
-            if best_buy_price < best_sell_price:
-                return best_buy_price, best_sell_price
-            
-            # If this is reached, than there is a trade pending
-            best_buy_seq = self.lob['buy'].prio_queue[best_buy_pidx][0]
-            best_buy_size = self.lob['buy'].db[best_buy_seq].size - self.lob['buy'].db[best_buy_seq].executed
-    
-            best_sell_seq = self.lob['sell'].prio_queue[best_sell_pidx][0]
-            best_sell_size = self.lob['sell'].db[best_sell_seq].size - self.lob['sell'].db[best_sell_seq].executed
-    
-            last_mod = self.last_mod
-            trade_size = min(best_buy_size, best_sell_size)
-    
-            self.lob['buy'].execute(best_buy_seq, trade_size, last_mod)
-            self.lob['sell'].execute(best_sell_seq, trade_size, last_mod)
+                self.cur_bas = (order.prio_date,
+                                self.lob['buy'].price(best_bid_idx),
+                                self.lob['buy'].book[best_bid_idx],
+                                self.lob['sell'].price(best_ask_idx),
+                                self.lob['sell'].book[best_ask_idx])
 
+    def get_bas(self, tlinf = '10:15', tlsup = '16:54'):
+        linf = datetime.strptime('{} {}'.format(self.session_date, tlinf), '%Y-%m-%d %H:%M')
+        lsup = datetime.strptime('{} {}'.format(self.session_date, tlsup), '%Y-%m-%d %H:%M')
+
+        tmp = {'time' : np.array([e[0] for e in self.bas]),
+               'bid_price' : np.array([e[1] for e in self.bas]),
+               'bid_size' : np.array([e[2] for e in self.bas]),
+               'ask_price' : np.array([e[3] for e in self.bas]),
+               'ask_size' : np.array([e[4] for e in self.bas])}
+        
+        idx = (tmp['time'] >= linf) & (tmp['time'] <= lsup)
+
+        return {'time' : tmp['time'][idx],
+                'bid_price' : tmp['bid_price'][idx],
+                'bid_size' : tmp['bid_size'][idx],
+                'ask_price' : tmp['ask_price'][idx],
+                'ask_size' : tmp['ask_size'][idx]}
+        
     def get_liquidity(self):
         liquidity = {'buy':  (np.array(self.lob['buy'].book)) * self.size_scale,
                      'sell': (np.array(self.lob['sell'].book)) * self.size_scale}

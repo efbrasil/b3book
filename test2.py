@@ -6,25 +6,30 @@ import numpy as np
 import pdb
 import importlib
 
-importlib.reload(b3book)
-importlib.reload(b3book.functions)
-importlib.reload(b3book.single_lob)
-importlib.reload(b3book.lob)
-importlib.reload(b3book)
+# lob = b3book.LOB(pinf = 0, psup = 12000, ticksize = 1,
+#                  price_scale=0.01, size_scale=100,
+#                  initial_status='closed')
 
-lob = b3book.LOB(pinf = 0, psup = 12000, ticksize = 1,
-                 price_scale=0.01, size_scale=100,
-                 initial_status='closed')
-lob.orders = myo
-lob.session_date = lob.orders[0].session_date
-
-files = ['OFER_CPA_20190628.gz', 'OFER_VDA_20190628.gz']
-limit = datetime.strptime('2019-06-28 15:01:00.000', '%Y-%m-%d  %H:%M:%S.%f')
+lob = b3book.LOB()
+# Opcao 1a: Le os arquivos (demora um pouco) CSV
+# files = ['OFER_CPA_20190628.gz', 'OFER_VDA_20190628.gz']
 # lob.read_orders('BBDC4', files, 'data')
-# lob.load_orders('bbdc4-20190228.data')
-myo = lob.orders
+# lob.save_orders('bbdc4_20190628.data')
+
+# Opcao 1b: Le um arquivo .data gerado anteriormente (mais rapido)
+lob.load_orders('bbdc4_20190628.data')
+
+
+
+# Opcao 2a: Processa todas as ordens ate 16:45
+lob.process_orders('16:54')
+
+# Opcao 2b: Processa todas as ordens com snapshots a cada 10 minutos
 lob.set_snapshot_freq(60*10)
-lob.process_orders(limit)
+lob.process_orders()
+plt.plot([e[3]-e[1] for e in lob.bas])
+plt.show()
+
 b3book.plot_book(lob, plt, True)
 
 # Price impact

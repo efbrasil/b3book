@@ -13,7 +13,6 @@ class SingleLOB:
 
         self.booksize = math.ceil((psup - pinf) / ticksize)
         self.book = np.zeros(self.booksize, dtype = 'int')
-        self.prio_queue = [deque() for x in range(self.booksize)]
         self.db = {}
 
         self.side = side
@@ -27,22 +26,23 @@ class SingleLOB:
         return(self.pinf + index * self.ticksize)
 
     def add(self, order):
-        """Add an order to the priority queue, to the database and to the book"""
+        """Add an order to the database and to the book"""
+
+        if (self.side == 'sell') and (order.price == 0):
+            # print('sell order with price = 0 ({})'.format(order))
+            return
 
         # Database
         dborder = DBOrder(size = order.size, executed = order.executed,
                           price = order.price, side = order.side)
         self.db[order.seq] = dborder
         
-        # Priority Queue
-        pidx = self.index(order.price)
-        self.prio_queue[pidx].append(order.seq)
-
         # Book
+        pidx = self.index(dborder.price)
         self.book[pidx] += (order.size - order.executed)
 
     def remove(self, seq):
-        """Removes an order from the priority queue, database and from the book"""
+        """Removes an order from the database and from the book"""
 
         # Get current info about the order (from the DB)
         dborder = self.db[seq]
@@ -56,57 +56,14 @@ class SingleLOB:
 
         self.book[pidx] -= dbremaining
 
-        # Priority Queue
-        self.prio_queue[pidx].remove(seq)
-
         # Database
         del self.db[seq]
-
-    def update(self, order):
-        """Updates an order in the database, the priority queue and the book"""
-
-        # Removes the old order and adds the new one, keeping the executed amount
-        if self.db[order.seq].size < order.executed:
-            raise Exception('in update, executed > size')
-        elif self.db[order.seq].size == order.executed:
-            raise Exception('in update, executed == size')
-        
-        executed = self.db[order.seq].executed
-        self.remove(order.seq)
-        updated = copy(order)
-        updated.executed = executed
-        self.add(updated)
-        # self.add(order)
-
-    def execute(self, seq, executed, mod):
-        """
-        Executes part of an order, updating the database and the book.
-        
-        If the remaining is zero, remove from the database and from the priority queue
-        """
-
-        if executed <= 0:
-            raise Exception('in execute(), executed <= 0')
-        # Get current info about the order (from the DB)
-        dborder = self.db[seq]
-        dbprice = dborder.price
-        dbremaining = dborder.size - dborder.executed
-        pidx = self.index(dbprice)
-
-        if executed > dbremaining:
-            raise Exception('Executed amount > remaining ({})'.format(seq))
-
-        elif executed == dbremaining:
-            self.remove(seq)
-
-        else:
-            self.db[seq].executed += executed
-            self.book[pidx] -= executed
 
     def process_new(self, order):
 
         if order.seq in self.db:
-            raise Exception('new order already in db ({})'.format(order))
+            # print('new order already in db ({})'.format(order))
+            self.remove(order.seq)
 
         if order.executed != 0:
             raise Exception('new order with >0 executed({})'.format(order))
@@ -127,44 +84,30 @@ class SingleLOB:
         if order.seq not in self.db:
             # print('update not in db ({})'.format(order))
             self.add(order)
+            return
         
         # elif self.db[order.seq].executed != order.executed:
         #     raise Exception('executed amount changed in update ({})'.format(order))
 
-        else:
-            self.update(order)
+        self.remove(order.seq)
+        self.add(order)
         
-    def process_pre_trade(self, order):
+    def process_trade(self, order):
 
         if order.seq not in self.db:
-            print('pre_open trade not in db ({})'.format(order))
+            # print('trade not in db ({})'.format(order))
+            self.add(order)
             return
         
         elif self.db[order.seq].size != order.size:
-            raise Exception('size changed in pre open trade ({})'.format(order))
+            raise Exception('size changed in trade ({})'.format(order))
 
         elif self.db[order.seq].price != order.price:
-            # raise Exception('price changed in pre open trade ({})'.format(order))
-            print('price changed in pre open trade ({})'.format(order))
-            self.update(order)
+            # print('price changed in trade ({})'.format(order))
+            pass
 
-        # Get current info about the order (from the DB)
-        dborder = self.db[order.seq]
-        dbprice = dborder.price
-        dbremaining = dborder.size - dborder.executed
-        pidx = self.index(dbprice)
-
-        executed = order.executed - dborder.executed
-
-        if executed > dbremaining:
-            raise Exception('Pre trade executed amount > remaining ({})'.format(order))
-
-        elif executed == dbremaining:
-            self.remove(order.seq)
-
-        else:
-            self.db[order.seq].executed += executed
-            self.book[pidx] -= executed
+        self.remove(order.seq)
+        self.add(order)
         
     def process_order(self, order):
 
@@ -179,21 +122,18 @@ class SingleLOB:
 
         elif order.event == 'cancel':
             self.process_cancel(order)
+
+        elif order.event == 'trade':
+            self.process_trade(order)
             
-        # elif order.event == 'trade':
-        #     # self.process_pre_trade(order)
-        #     if self.status == MarketStatus.opening:
-        #         self.process_pre_trade(order)
-
-
         elif order.event == 'reentry':
             pass
-            # self.process_update(order)
 
+        elif order.event == 'expire':
+            self.process_cancel(order)
 
         else:
             print('unknown event ({})'.format(order))
-            # raise Exception('unknown event ({})'.format(order))
 
     def snapshot(self):
         idx = np.where(self.book > 0)[0]
